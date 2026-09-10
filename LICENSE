@@ -1,0 +1,47 @@
+SHierarchy Styler License
+
+Copyright (c) 2026 Sema
+
+1. Permission
+
+Permission is granted, free of charge, to any person obtaining a copy of this
+software and its associated files (the "Software") to use, copy, modify, merge,
+publish and redistribute the Software, in source or binary form, subject to the
+conditions below.
+
+Using the Software as a development tool is allowed for any purpose, including
+while developing commercial projects. Projects, games and other works made with
+the help of the Software are not covered by this license and are not restricted
+by it.
+
+2. No selling
+
+The Software, and any modified version or derivative of it, must remain
+available free of charge. You may not:
+
+  a. sell the Software or charge any fee, price, subscription or mandatory
+     donation for obtaining, downloading, unlocking or using it;
+  b. include the Software, or a derivative of it, in any product, asset,
+     bundle, package, marketplace listing or service that is sold or otherwise
+     requires payment, including the Unity Asset Store or similar stores;
+  c. offer the Software as a paid feature of any other software or service.
+
+Charging for the cost of physical media or hosting is not permitted either.
+
+3. Conditions of redistribution
+
+Any copy or derivative of the Software that you redistribute must:
+
+  a. include this license text unchanged, together with the copyright notice
+     above;
+  b. remain under this same license.
+
+4. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
