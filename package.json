@@ -1,9 +1,9 @@
 {
   "name": "com.sema.shierarchy-styler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "SHierarchy Styler",
-  "description": "Set an icon and a row color on GameObjects from the Hierarchy window. Includes 156 icons.",
-  "unity": "6000.0",
+  "description": "Set an icon and a row color on GameObjects from the Hierarchy window. Unity 6.6 build for the new Hierarchy window. Includes 156 icons.",
+  "unity": "6000.6",
   "author": {
     "name": "Sema"
   },

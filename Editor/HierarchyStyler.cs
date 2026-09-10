@@ -3,10 +3,22 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using Unity.Hierarchy;
+using Unity.Hierarchy.Editor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Serialization;
+using UnityEngine.UIElements;
+
+// Unity 6.6 (6000.6) notes
+// ------------------------
+// * The UI Toolkit based Hierarchy window is the default. It never invokes the IMGUI row callback, so rows are
+//   styled through Unity.Hierarchy.Editor.HierarchyWindow.BindViewItem / UnbindViewItem instead.
+// * The legacy Hierarchy (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy) still works and is
+//   driven through EditorApplication.hierarchyWindowItemByEntityIdOnGUI. The int based
+//   hierarchyWindowItemOnGUI, InstanceIDToObject and GetInstanceID are obsolete and replaced by EntityId.
+// * Both paths share the same store (ProjectSettings/HierarchyStyler.asset), so existing styles carry over.
 
 namespace CustomHierarchyTools
 {
@@ -56,22 +68,26 @@ namespace CustomHierarchyTools
         }
     }
 
-    /// <summary>Draws styled rows and the quick-assign button in the Hierarchy window.</summary>
+    /// <summary>Style lookup shared by the legacy (IMGUI) and new (UI Toolkit) Hierarchy renderers.</summary>
     [InitializeOnLoad]
     internal static class HierarchyStyleRenderer
     {
-        private const float ButtonSize = 16f;
-        private static readonly Dictionary<int, HierarchyStyle> _objectStyles =
-            new Dictionary<int, HierarchyStyle>();
+        private static readonly Dictionary<EntityId, HierarchyStyle> _objectStyles =
+            new Dictionary<EntityId, HierarchyStyle>();
         private static readonly Dictionary<string, HierarchyStyle> _stylesById =
             new Dictionary<string, HierarchyStyle>();
         private static bool _indexReady;
-        private static GUIContent _buttonContent;
-        private static GUIStyle _buttonStyle;
 
         static HierarchyStyleRenderer()
         {
-            EditorApplication.hierarchyWindowItemOnGUI += DrawHierarchyItem;
+            // Legacy Hierarchy window (IMGUI).
+            EditorApplication.hierarchyWindowItemByEntityIdOnGUI += LegacyHierarchyRows.Draw;
+
+            // New Hierarchy window (UI Toolkit, default since Unity 6.6).
+            HierarchyWindow.BindViewItem += ModernHierarchyRows.Bind;
+            HierarchyWindow.UnbindViewItem += ModernHierarchyRows.Unbind;
+            HierarchyWindow.PopulateContextMenu += ModernHierarchyRows.PopulateContextMenu;
+
             EditorApplication.hierarchyChanged += Refresh;
             EditorApplication.projectChanged += Refresh;
             EditorApplication.playModeStateChanged += _ => Refresh();
@@ -92,6 +108,7 @@ namespace CustomHierarchyTools
             _indexReady = false;
             foreach (var style in HierarchyStyleStore.instance.Styles)
                 style.ClearTextureCache();
+            ModernHierarchyRows.RestyleAll();
             EditorApplication.RepaintHierarchyWindow();
         }
 
@@ -106,8 +123,8 @@ namespace CustomHierarchyTools
         {
             if (!IsEligible(gameObject)) return null;
 
-            int instanceId = gameObject.GetInstanceID();
-            if (_objectStyles.TryGetValue(instanceId, out var found)) return found;
+            EntityId entityId = gameObject.GetEntityId();
+            if (_objectStyles.TryGetValue(entityId, out var found)) return found;
             if (!_indexReady)
             {
                 foreach (var style in HierarchyStyleStore.instance.Styles)
@@ -116,24 +133,232 @@ namespace CustomHierarchyTools
             }
             string key = GlobalObjectId.GetGlobalObjectIdSlow(gameObject).ToString();
             _stylesById.TryGetValue(key, out found);
-            _objectStyles[instanceId] = found;
+            _objectStyles[entityId] = found;
             return found;
         }
 
-        private static void DrawHierarchyItem(int instanceId, Rect row)
+        /// <summary>The objects a row action should affect: the whole selection when the row is part of it.</summary>
+        internal static List<GameObject> CollectTargets(GameObject gameObject)
         {
-            var gameObject = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            var targets = new List<GameObject>();
+            if (Selection.Contains(gameObject) && Selection.gameObjects.Length > 1)
+            {
+                foreach (var selected in Selection.gameObjects)
+                    if (IsEligible(selected)) targets.Add(selected);
+            }
+            if (targets.Count == 0) targets.Add(gameObject);
+            return targets;
+        }
+
+        internal static Texture2D EditIcon()
+        {
+            return EditorGUIUtility.IconContent(EditorGUIUtility.isProSkin ? "d_editicon.sml" : "editicon.sml").image
+                as Texture2D;
+        }
+    }
+
+    /// <summary>Row styling for the new UI Toolkit Hierarchy window (Unity 6.6 default).</summary>
+    internal static class ModernHierarchyRows
+    {
+        private const float ButtonSize = 16f;
+        private const float TintAlpha = 0.12f;
+
+        private sealed class Decoration
+        {
+            public HierarchyViewItem Item;
+            public HierarchyWindow Window;
+            public GameObject Target;
+            public VisualElement Tint;
+            public VisualElement Stripe;
+            public Button EditButton;
+            public bool Hovered;
+        }
+
+        private static readonly Dictionary<HierarchyViewItem, Decoration> _decorations =
+            new Dictionary<HierarchyViewItem, Decoration>();
+
+        public static void Bind(HierarchyWindow window, HierarchyView view, HierarchyViewItem item)
+        {
+            var decoration = GetOrCreate(item);
+            EnsureAttached(decoration);
+            decoration.Window = window;
+            decoration.Target = item.Handler is HierarchyGameObjectHandler handler
+                ? handler.GetGameObject(item.Node)
+                : null;
+            Apply(decoration);
+        }
+
+        public static void Unbind(HierarchyWindow window, HierarchyView view, HierarchyViewItem item)
+        {
+            if (!_decorations.TryGetValue(item, out var decoration)) return;
+            decoration.Target = null;
+            decoration.Hovered = false;
+            Apply(decoration);
+        }
+
+        public static void PopulateContextMenu(HierarchyWindow window, HierarchyView view, HierarchyViewItem item,
+            DropdownMenu menu)
+        {
+            if (item == null || !(item.Handler is HierarchyGameObjectHandler handler)) return;
+            var gameObject = handler.GetGameObject(item.Node);
+            if (!HierarchyStyleRenderer.IsEligible(gameObject)) return;
+
+            var targets = HierarchyStyleRenderer.CollectTargets(gameObject);
+            Rect anchor = ToScreen(window, item.worldBound);
+            menu.AppendSeparator();
+            menu.AppendAction("Hierarchy Style...", action =>
+            {
+                if (action.eventInfo != null)
+                    anchor = ToScreen(window, new Rect(action.eventInfo.mousePosition, Vector2.zero));
+                HierarchyIconPicker.Open(anchor, targets);
+            });
+            if (HierarchyStyleRenderer.Find(gameObject) != null)
+                menu.AppendAction("Remove Hierarchy Style", _ => HierarchyStyleCommands.Remove(targets));
+        }
+
+        /// <summary>Re-applies styles to every bound row. Called after the store changes.</summary>
+        internal static void RestyleAll()
+        {
+            foreach (var decoration in _decorations.Values)
+                if (decoration.Target != null) Apply(decoration);
+        }
+
+        private static Decoration GetOrCreate(HierarchyViewItem item)
+        {
+            if (_decorations.TryGetValue(item, out var existing)) return existing;
+
+            var decoration = new Decoration { Item = item };
+
+            decoration.Tint = new VisualElement { name = "hierarchy-styler-tint", pickingMode = PickingMode.Ignore };
+            var tint = decoration.Tint.style;
+            tint.position = Position.Absolute;
+            tint.left = 0f; tint.right = 0f; tint.top = 0f; tint.bottom = 0f;
+            tint.display = DisplayStyle.None;
+
+            decoration.Stripe = new VisualElement { name = "hierarchy-styler-stripe", pickingMode = PickingMode.Ignore };
+            var stripe = decoration.Stripe.style;
+            stripe.position = Position.Absolute;
+            stripe.left = 0f; stripe.top = 2f; stripe.bottom = 2f; stripe.width = 2f;
+            stripe.display = DisplayStyle.None;
+
+            var row = item.RowContainer ?? item;
+            row.Insert(0, decoration.Tint);
+            row.Insert(1, decoration.Stripe);
+
+            decoration.EditButton = new Button(() => OpenPicker(decoration))
+            {
+                name = "hierarchy-styler-edit", tooltip = "Set hierarchy icon", text = ""
+            };
+            var button = decoration.EditButton.style;
+            button.width = ButtonSize; button.height = ButtonSize;
+            button.minWidth = ButtonSize; button.minHeight = ButtonSize;
+            button.marginLeft = 2f; button.marginRight = 2f; button.marginTop = 0f; button.marginBottom = 0f;
+            button.paddingLeft = 1f; button.paddingRight = 1f; button.paddingTop = 1f; button.paddingBottom = 1f;
+            button.backgroundImage = new StyleBackground(HierarchyStyleRenderer.EditIcon());
+            button.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
+            button.display = DisplayStyle.None;
+            (item.RightCustomContainer ?? item).Add(decoration.EditButton);
+
+            item.RegisterCallback<PointerEnterEvent>(_ => { decoration.Hovered = true; UpdateButton(decoration); });
+            item.RegisterCallback<PointerLeaveEvent>(_ => { decoration.Hovered = false; UpdateButton(decoration); });
+
+            _decorations[item] = decoration;
+            return decoration;
+        }
+
+        /// <summary>Rows are recycled and Unity may clear the custom containers; re-add our elements if needed.</summary>
+        private static void EnsureAttached(Decoration decoration)
+        {
+            var item = decoration.Item;
+            var row = item.RowContainer ?? item;
+            if (decoration.Tint.parent == null) row.Insert(0, decoration.Tint);
+            if (decoration.Stripe.parent == null) row.Insert(Mathf.Min(1, row.childCount), decoration.Stripe);
+            if (decoration.EditButton.parent == null) (item.RightCustomContainer ?? item).Add(decoration.EditButton);
+        }
+
+        private static void Apply(Decoration decoration)
+        {
+            var item = decoration.Item;
+            var style = decoration.Target != null ? HierarchyStyleRenderer.Find(decoration.Target) : null;
+
+            if (style != null && style.UseColor)
+            {
+                Color tint = style.RowColor;
+                tint.a = TintAlpha;
+                decoration.Tint.style.backgroundColor = tint;
+                decoration.Tint.style.display = DisplayStyle.Flex;
+                Color stripe = style.RowColor;
+                stripe.a = 1f;
+                decoration.Stripe.style.backgroundColor = stripe;
+                decoration.Stripe.style.display = DisplayStyle.Flex;
+            }
+            else
+            {
+                decoration.Tint.style.display = DisplayStyle.None;
+                decoration.Stripe.style.display = DisplayStyle.None;
+            }
+
+            var icon = style?.GetTexture() as Texture2D;
+            if (icon != null && item.Icon != null)
+            {
+                item.Icon.style.backgroundImage = new StyleBackground(icon);
+                item.Icon.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
+                item.Icon.style.unityBackgroundImageTintColor = decoration.Target.activeInHierarchy
+                    ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+            }
+            else if (item.Icon != null)
+            {
+                item.Icon.style.backgroundImage = StyleKeyword.Null;
+                item.Icon.style.backgroundSize = StyleKeyword.Null;
+                item.Icon.style.unityBackgroundImageTintColor = StyleKeyword.Null;
+            }
+
+            UpdateButton(decoration);
+        }
+
+        private static void UpdateButton(Decoration decoration)
+        {
+            bool show = decoration.Hovered && HierarchyStyleRenderer.IsEligible(decoration.Target);
+            decoration.EditButton.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private static void OpenPicker(Decoration decoration)
+        {
+            if (!HierarchyStyleRenderer.IsEligible(decoration.Target)) return;
+            var targets = HierarchyStyleRenderer.CollectTargets(decoration.Target);
+            HierarchyIconPicker.Open(ToScreen(decoration.Window, decoration.EditButton.worldBound), targets);
+        }
+
+        /// <summary>Converts panel coordinates of the Hierarchy window to screen coordinates.</summary>
+        private static Rect ToScreen(EditorWindow window, Rect panelRect)
+        {
+            Vector2 origin = window != null ? window.position.position : Vector2.zero;
+            return new Rect(origin + panelRect.position, panelRect.size);
+        }
+    }
+
+    /// <summary>Row styling for the legacy IMGUI Hierarchy window.</summary>
+    internal static class LegacyHierarchyRows
+    {
+        private const float ButtonSize = 16f;
+        private static GUIContent _buttonContent;
+        private static GUIStyle _buttonStyle;
+
+        public static void Draw(EntityId entityId, Rect row)
+        {
+            var gameObject = EditorUtility.EntityIdToObject(entityId) as GameObject;
             if (gameObject == null) return;
-            var style = Find(gameObject);
-            if (style != null && Event.current.type == EventType.Repaint) DrawStyle(instanceId, gameObject, row, style);
+            var style = HierarchyStyleRenderer.Find(gameObject);
+            if (style != null && Event.current.type == EventType.Repaint) DrawStyle(entityId, gameObject, row, style);
             DrawQuickButton(gameObject, row);
         }
 
-        private static void DrawStyle(int instanceId, GameObject gameObject, Rect row, HierarchyStyle style)
+        private static void DrawStyle(EntityId entityId, GameObject gameObject, Rect row, HierarchyStyle style)
         {
+            bool selected = Selection.Contains(entityId);
             if (style.UseColor)
             {
-                if (!Selection.Contains(instanceId))
+                if (!selected)
                 {
                     Color tint = style.RowColor;
                     tint.a = 0.12f;
@@ -148,7 +373,6 @@ namespace CustomHierarchyTools
             if (icon == null) return;
 
             var iconRect = new Rect(row.x, row.y + (row.height - 16f) / 2f, 16f, 16f);
-            bool selected = Selection.Contains(instanceId);
             bool hierarchyFocused = EditorWindow.focusedWindow != null &&
                 EditorWindow.focusedWindow.titleContent.text == "Hierarchy";
             Color background = EditorGUIUtility.isProSkin
@@ -170,13 +394,12 @@ namespace CustomHierarchyTools
         /// <summary>Small pencil button at the right end of the hovered row. Opens the icon picker.</summary>
         private static void DrawQuickButton(GameObject gameObject, Rect row)
         {
-            if (!IsEligible(gameObject)) return;
+            if (!HierarchyStyleRenderer.IsEligible(gameObject)) return;
             if (!row.Contains(Event.current.mousePosition)) return;
 
             if (_buttonContent == null)
             {
-                _buttonContent = EditorGUIUtility.IconContent(EditorGUIUtility.isProSkin ? "d_editicon.sml" : "editicon.sml");
-                _buttonContent.tooltip = "Set hierarchy icon";
+                _buttonContent = new GUIContent(HierarchyStyleRenderer.EditIcon(), "Set hierarchy icon");
                 _buttonStyle = new GUIStyle(EditorStyles.iconButton) { padding = new RectOffset(1, 1, 1, 1) };
             }
 
@@ -190,14 +413,8 @@ namespace CustomHierarchyTools
 
             if (!GUI.Button(buttonRect, _buttonContent, _buttonStyle)) return;
 
-            var targets = new List<GameObject>();
-            if (Selection.Contains(gameObject.GetInstanceID()) && Selection.gameObjects.Length > 1)
-            {
-                foreach (var selected in Selection.gameObjects)
-                    if (IsEligible(selected)) targets.Add(selected);
-            }
-            if (targets.Count == 0) targets.Add(gameObject);
-            PopupWindow.Show(buttonRect, new HierarchyIconPicker(targets));
+            HierarchyIconPicker.Open(GUIUtility.GUIToScreenRect(buttonRect),
+                HierarchyStyleRenderer.CollectTargets(gameObject));
         }
     }
 
@@ -402,14 +619,16 @@ namespace CustomHierarchyTools
     }
 
     /// <summary>
-    /// Popup opened from the hierarchy row button. Picking an icon or color applies to the target objects at once.
+    /// Drop-down picker opened from a hierarchy row. Picking an icon or color applies to the target objects at once.
+    /// Hosted in its own EditorWindow so it can be opened from both IMGUI and UI Toolkit callbacks.
     /// </summary>
-    internal sealed class HierarchyIconPicker : PopupWindowContent
+    internal sealed class HierarchyIconPicker : EditorWindow
     {
         private const float RowHeight = 22f;
         private const float IconSize = 18f;
         private const float SwatchSize = 18f;
         private const string SearchControl = "HierarchyIconPickerSearch";
+        private static readonly Vector2 WindowSize = new Vector2(280f, 480f);
 
         private static readonly Color[] Presets =
         {
@@ -419,7 +638,7 @@ namespace CustomHierarchyTools
             new Color(0.95f, 0.50f, 0.72f), new Color(0.70f, 0.70f, 0.70f)
         };
 
-        private readonly List<GameObject> _targets;
+        private List<GameObject> _targets = new List<GameObject>();
         private Texture2D _icon;
         private bool _useColor;
         private Color _color;
@@ -430,32 +649,47 @@ namespace CustomHierarchyTools
         private GUIStyle _rowStyle;
         private GUIStyle _headerStyle;
 
-        public HierarchyIconPicker(List<GameObject> targets)
+        /// <param name="screenAnchor">Screen-space rect the drop-down is attached to (button or mouse position).</param>
+        public static void Open(Rect screenAnchor, List<GameObject> targets)
         {
-            _targets = targets;
-            var existing = targets.Count > 0 ? HierarchyStyleRenderer.Find(targets[0]) : null;
+            var window = CreateInstance<HierarchyIconPicker>();
+            window.Init(targets);
+            window.wantsMouseMove = true;
+            window.ShowAsDropDown(screenAnchor, WindowSize);
+        }
+
+        private void Init(List<GameObject> targets)
+        {
+            _targets = targets ?? new List<GameObject>();
+            var existing = _targets.Count > 0 ? HierarchyStyleRenderer.Find(_targets[0]) : null;
             _hasStyle = existing != null;
             _icon = existing?.GetTexture() as Texture2D;
             _useColor = existing == null || existing.UseColor;
             _color = existing != null ? existing.RowColor : HierarchyStyleCommands.DefaultColor;
         }
 
-        public override Vector2 GetWindowSize() => new Vector2(280f, 480f);
-
-        public override void OnOpen()
-        {
-            editorWindow.wantsMouseMove = true;
-        }
-
-        public override void OnGUI(Rect rect)
+        private void OnGUI()
         {
             if (_rowStyle == null)
             {
                 _rowStyle = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleLeft };
                 _headerStyle = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleLeft };
             }
-            if (Event.current.type == EventType.MouseMove) editorWindow.Repaint();
+            if (Event.current.type == EventType.MouseMove) Repaint();
+            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape)
+            {
+                Close();
+                GUIUtility.ExitGUI();
+            }
 
+            _targets.RemoveAll(target => target == null);
+            if (_targets.Count == 0)
+            {
+                Close();
+                GUIUtility.ExitGUI();
+            }
+
+            var rect = new Rect(0f, 0f, position.width, position.height);
             GUILayout.BeginArea(new Rect(rect.x + 6f, rect.y + 6f, rect.width - 12f, rect.height - 12f));
             GUILayout.Label(_targets.Count == 1 ? _targets[0].name : _targets.Count + " objects", EditorStyles.boldLabel);
 
@@ -581,7 +815,7 @@ namespace CustomHierarchyTools
         {
             _icon = texture;
             if (Commit(HierarchyStyleCommands.Apply(_targets, _icon, _useColor, _color)))
-                editorWindow.Close();
+                Close();
         }
 
         private void ApplyColor(bool useColor, Color color)
@@ -595,7 +829,7 @@ namespace CustomHierarchyTools
         private void RemoveStyle()
         {
             if (Commit(HierarchyStyleCommands.Remove(_targets)))
-                editorWindow.Close();
+                Close();
         }
 
         /// <summary>Shows an error in the popup when the command fails. Returns true on success.</summary>
@@ -604,11 +838,11 @@ namespace CustomHierarchyTools
             if (error == null)
             {
                 _hasStyle = true;
-                editorWindow.Repaint();
+                Repaint();
                 return true;
             }
             Debug.LogWarning("[SHierarchy Styler] " + error);
-            editorWindow.ShowNotification(new GUIContent(error));
+            ShowNotification(new GUIContent(error));
             return false;
         }
     }

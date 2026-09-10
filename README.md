@@ -6,9 +6,11 @@ Small Unity editor tool for giving GameObjects an icon and a row color in the Hi
 
 I made it because I kept losing track of what was what in big scenes and the default cube icon doesn't help. The color/icon data is stored per project in `ProjectSettings/HierarchyStyler.asset`, not in the scene, so it doesn't touch your scene files.
 
-## Note if you're on Unity 6.6 or newer
+## Unity 6.6 branch
 
-Unity 6.6 added this natively. Go to Edit > Preferences > General > Hierarchy Window and turn on GameObject Icons, and the hierarchy shows the icon you set on each GameObject (the one you pick by clicking the object's icon in the Inspector). So on 6.6 you wouldn't need this tool for the icons. It still gives you the row colors, the quick pencil button, the icon set and styling several objects at once, which the built-in option doesn't do. See the [Hierarchy window reference](https://docs.unity3d.com/6000.6/Documentation/Manual/hierarchy-reference.html) in the Unity manual.
+This branch is the Unity 6.6 (6000.6) version. Unity 6.6 made the new UI Toolkit Hierarchy window the default and turned the old row callback (`EditorApplication.hierarchyWindowItemOnGUI`) and the int-based object ids into compile errors, so the 1.0 script does not build there. This version draws its rows through the new `HierarchyWindow.BindViewItem` API and still works with the legacy Hierarchy (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy). Existing data in `ProjectSettings/HierarchyStyler.asset` is used as is.
+
+New in this branch: right-click a row and pick "Hierarchy Style..." to open the same popup, or "Remove Hierarchy Style". Unity 6.6 also has a built-in GameObject Icons preference (Edit > Preferences > General) that shows the icon set in the Inspector, but it has no row colors, quick button, icon set or multi-select, so the tool is still useful. For Unity 6000.0 to 6000.5 use the `main` branch.
 
 ## What it does
 
@@ -25,12 +27,12 @@ Unity 6.6 added this natively. Go to Edit > Preferences > General > Hierarchy Wi
 Package Manager > `+` > Add package from git URL:
 
 ```
-https://github.com/fantatik3/SHierarchyStyler.git
+https://github.com/fantatik3/SHierarchyStyler.git#unity-6.6
 ```
 
 Or just copy `Editor/HierarchyStyler.cs` and the `Editor/Icons` folder somewhere inside `Assets/`. They need to stay next to each other, the script looks for a folder called `Icons` (or `SHierarchyIcons`) in its own directory.
 
-Unity 6000.0 or newer.
+Unity 6000.6 or newer. For 6000.0 to 6000.5 install from the `main` branch instead (URL without `#unity-6.6`).
 
 ## How to use
 
