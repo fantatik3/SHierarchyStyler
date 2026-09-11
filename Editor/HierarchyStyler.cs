@@ -45,17 +45,6 @@ namespace CustomHierarchyTools
         }
     }
 
-    [FilePath("ProjectSettings/HierarchyStyler.asset", FilePathAttribute.Location.ProjectFolder)]
-    internal sealed class HierarchyStyleStore : ScriptableSingleton<HierarchyStyleStore>
-    {
-        [FormerlySerializedAs("styles")]
-        [SerializeField] internal List<HierarchyStyle> Styles = new List<HierarchyStyle>();
-        public void Persist()
-        {
-            Save(true);
-        }
-    }
-
     /// <summary>Draws styled rows and the quick-assign button in the Hierarchy window.</summary>
     [InitializeOnLoad]
     internal static class HierarchyStyleRenderer

@@ -4,7 +4,7 @@
 
 Herramienta pequeña para el editor de Unity que permite poner un icono y un color de fila a los GameObjects en la ventana Hierarchy. Pasas el ratón por una fila, pulsas el botón del lápiz que aparece a la derecha y eliges un icono de una lista.
 
-La hice porque en escenas grandes me perdía entre tanto cubo gris. Los datos de icono y color se guardan por proyecto en `ProjectSettings/HierarchyStyler.asset`, no en la escena, así que no toca tus archivos de escena.
+La hice porque en escenas grandes me perdía entre tanto cubo gris. Los datos de icono y color se guardan por proyecto en `ProjectSettings/HierarchyStyler.json`, no en la escena, así que no toca tus archivos de escena.
 
 ## Nota si usas Unity 6.6 o más reciente
 
@@ -28,7 +28,7 @@ Package Manager > `+` > Add package from git URL:
 https://github.com/fantatik3/SHierarchyStyler.git
 ```
 
-O simplemente copia `Editor/HierarchyStyler.cs` y la carpeta `Editor/Icons` en algún sitio dentro de `Assets/`. Tienen que estar juntos, el script busca una carpeta llamada `Icons` (o `SHierarchyIcons`) en su mismo directorio.
+O simplemente copia `Editor/HierarchyStyler.cs`, `Editor/HierarchyStyleStore.cs` y la carpeta `Editor/Icons` en algún sitio dentro de `Assets/`. Tienen que estar juntos, el script busca una carpeta llamada `Icons` (o `SHierarchyIcons`) en su mismo directorio.
 
 Unity 6000.0 o más reciente.
 

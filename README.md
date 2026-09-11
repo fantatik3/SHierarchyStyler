@@ -4,7 +4,7 @@
 
 Small Unity editor tool for giving GameObjects an icon and a row color in the Hierarchy window. You hover a row, click the pencil button that shows up on the right and pick an icon from a list.
 
-I made it because I kept losing track of what was what in big scenes and the default cube icon doesn't help. The color/icon data is stored per project in `ProjectSettings/HierarchyStyler.asset`, not in the scene, so it doesn't touch your scene files.
+I made it because I kept losing track of what was what in big scenes and the default cube icon doesn't help. The color/icon data is stored per project in `ProjectSettings/HierarchyStyler.json`, not in the scene, so it doesn't touch your scene files.
 
 ## Note if you're on Unity 6.6 or newer
 
@@ -28,7 +28,7 @@ Package Manager > `+` > Add package from git URL:
 https://github.com/fantatik3/SHierarchyStyler.git
 ```
 
-Or just copy `Editor/HierarchyStyler.cs` and the `Editor/Icons` folder somewhere inside `Assets/`. They need to stay next to each other, the script looks for a folder called `Icons` (or `SHierarchyIcons`) in its own directory.
+Or just copy `Editor/HierarchyStyler.cs`, `Editor/HierarchyStyleStore.cs` and the `Editor/Icons` folder somewhere inside `Assets/`. They need to stay next to each other, the script looks for a folder called `Icons` (or `SHierarchyIcons`) in its own directory.
 
 Unity 6000.0 or newer.
 
