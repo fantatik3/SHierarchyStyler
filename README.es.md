@@ -4,11 +4,11 @@
 
 Herramienta pequeña para el editor de Unity que permite poner un icono y un color de fila a los GameObjects en la ventana Hierarchy. Pasas el ratón por una fila, pulsas el botón del lápiz que aparece a la derecha y eliges un icono de una lista.
 
-La hice porque en escenas grandes me perdía entre tanto cubo gris. Los datos de icono y color se guardan por proyecto en `ProjectSettings/HierarchyStyler.asset`, no en la escena, así que no toca tus archivos de escena.
+La hice porque en escenas grandes me perdía entre tanto cubo gris. Los datos de icono y color se guardan por proyecto en `ProjectSettings/HierarchyStyler.json`, no en la escena, así que no toca tus archivos de escena.
 
 ## Rama para Unity 6.6
 
-Esta rama es la versión para Unity 6.6 (6000.6). Unity 6.6 puso por defecto la nueva ventana Hierarchy hecha con UI Toolkit y convirtió en errores de compilación el callback antiguo de filas (`EditorApplication.hierarchyWindowItemOnGUI`) y los ids de objeto basados en int, así que el script 1.0 no compila ahí. Esta versión dibuja las filas con la nueva API `HierarchyWindow.BindViewItem` y sigue funcionando con la Hierarchy clásica (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy). Los datos que ya tengas en `ProjectSettings/HierarchyStyler.asset` se usan tal cual.
+Esta rama es la versión para Unity 6.6 (6000.6). Unity 6.6 puso por defecto la nueva ventana Hierarchy hecha con UI Toolkit y convirtió en errores de compilación el callback antiguo de filas (`EditorApplication.hierarchyWindowItemOnGUI`) y los ids de objeto basados en int, así que el script 1.0 no compila ahí. Esta versión dibuja las filas con la nueva API `HierarchyWindow.BindViewItem` y sigue funcionando con la Hierarchy clásica (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy). Los datos de versiones anteriores en `ProjectSettings/HierarchyStyler.asset` se migran al archivo JSON automáticamente la primera vez.
 
 Nuevo en esta rama: clic derecho en una fila y elige "Hierarchy Style..." para abrir el mismo popup, o "Remove Hierarchy Style". Unity 6.6 también tiene una preferencia GameObject Icons (Edit > Preferences > General) que muestra el icono puesto en el Inspector, pero no tiene colores de fila, botón rápido, pack de iconos ni selección múltiple, así que la herramienta sigue siendo útil. Para Unity 6000.0 a 6000.5 usa la rama `main`.
 
@@ -30,7 +30,7 @@ Package Manager > `+` > Add package from git URL:
 https://github.com/fantatik3/SHierarchyStyler.git#unity-6.6
 ```
 
-O simplemente copia `Editor/HierarchyStyler.cs` y la carpeta `Editor/Icons` en algún sitio dentro de `Assets/`. Tienen que estar juntos, el script busca una carpeta llamada `Icons` (o `SHierarchyIcons`) en su mismo directorio.
+O simplemente copia `Editor/HierarchyStyler.cs`, `Editor/HierarchyStyleStore.cs` y la carpeta `Editor/Icons` en algún sitio dentro de `Assets/`. Tienen que estar juntos, el script busca una carpeta llamada `Icons` (o `SHierarchyIcons`) en su mismo directorio.
 
 Unity 6000.6 o más reciente. Para 6000.0 a 6000.5 instala desde la rama `main` (la URL sin `#unity-6.6`).
 

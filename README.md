@@ -4,11 +4,11 @@
 
 Small Unity editor tool for giving GameObjects an icon and a row color in the Hierarchy window. You hover a row, click the pencil button that shows up on the right and pick an icon from a list.
 
-I made it because I kept losing track of what was what in big scenes and the default cube icon doesn't help. The color/icon data is stored per project in `ProjectSettings/HierarchyStyler.asset`, not in the scene, so it doesn't touch your scene files.
+I made it because I kept losing track of what was what in big scenes and the default cube icon doesn't help. The color/icon data is stored per project in `ProjectSettings/HierarchyStyler.json`, not in the scene, so it doesn't touch your scene files.
 
 ## Unity 6.6 branch
 
-This branch is the Unity 6.6 (6000.6) version. Unity 6.6 made the new UI Toolkit Hierarchy window the default and turned the old row callback (`EditorApplication.hierarchyWindowItemOnGUI`) and the int-based object ids into compile errors, so the 1.0 script does not build there. This version draws its rows through the new `HierarchyWindow.BindViewItem` API and still works with the legacy Hierarchy (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy). Existing data in `ProjectSettings/HierarchyStyler.asset` is used as is.
+This branch is the Unity 6.6 (6000.6) version. Unity 6.6 made the new UI Toolkit Hierarchy window the default and turned the old row callback (`EditorApplication.hierarchyWindowItemOnGUI`) and the int-based object ids into compile errors, so the 1.0 script does not build there. This version draws its rows through the new `HierarchyWindow.BindViewItem` API and still works with the legacy Hierarchy (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy). Data from earlier versions in `ProjectSettings/HierarchyStyler.asset` is migrated to the JSON file automatically on first load.
 
 New in this branch: right-click a row and pick "Hierarchy Style..." to open the same popup, or "Remove Hierarchy Style". Unity 6.6 also has a built-in GameObject Icons preference (Edit > Preferences > General) that shows the icon set in the Inspector, but it has no row colors, quick button, icon set or multi-select, so the tool is still useful. For Unity 6000.0 to 6000.5 use the `main` branch.
 
@@ -30,7 +30,7 @@ Package Manager > `+` > Add package from git URL:
 https://github.com/fantatik3/SHierarchyStyler.git#unity-6.6
 ```
 
-Or just copy `Editor/HierarchyStyler.cs` and the `Editor/Icons` folder somewhere inside `Assets/`. They need to stay next to each other, the script looks for a folder called `Icons` (or `SHierarchyIcons`) in its own directory.
+Or just copy `Editor/HierarchyStyler.cs`, `Editor/HierarchyStyleStore.cs` and the `Editor/Icons` folder somewhere inside `Assets/`. They need to stay next to each other, the script looks for a folder called `Icons` (or `SHierarchyIcons`) in its own directory.
 
 Unity 6000.6 or newer. For 6000.0 to 6000.5 install from the `main` branch instead (URL without `#unity-6.6`).
 

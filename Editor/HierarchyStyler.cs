@@ -18,7 +18,8 @@ using UnityEngine.UIElements;
 // * The legacy Hierarchy (Edit > Project Settings > Editor > Hierarchy > Use Legacy Hierarchy) still works and is
 //   driven through EditorApplication.hierarchyWindowItemByEntityIdOnGUI. The int based
 //   hierarchyWindowItemOnGUI, InstanceIDToObject and GetInstanceID are obsolete and replaced by EntityId.
-// * Both paths share the same store (ProjectSettings/HierarchyStyler.asset), so existing styles carry over.
+// * Both paths share the same store (HierarchyStyleStore.cs), which persists to ProjectSettings/HierarchyStyler.json
+//   and migrates the older HierarchyStyler.asset automatically.
 
 namespace CustomHierarchyTools
 {
@@ -54,17 +55,6 @@ namespace CustomHierarchyTools
         {
             _textureResolved = false;
             _cachedTexture = null;
-        }
-    }
-
-    [FilePath("ProjectSettings/HierarchyStyler.asset", FilePathAttribute.Location.ProjectFolder)]
-    internal sealed class HierarchyStyleStore : ScriptableSingleton<HierarchyStyleStore>
-    {
-        [FormerlySerializedAs("styles")]
-        [SerializeField] internal List<HierarchyStyle> Styles = new List<HierarchyStyle>();
-        public void Persist()
-        {
-            Save(true);
         }
     }
 
@@ -161,30 +151,49 @@ namespace CustomHierarchyTools
     internal static class ModernHierarchyRows
     {
         private const float ButtonSize = 16f;
+        private const float ButtonMargin = 2f;
+        private const float PrefabArrowWidth = 18f; // Unity's "open prefab" arrow at the row's right end
         private const float TintAlpha = 0.12f;
 
+        /// <summary>
+        /// Per HierarchyViewItem state. The Name column pools its items and re-parents them into whichever row is
+        /// being filled, so the row an item sits in changes between binds. Our elements are therefore moved into the
+        /// item's current row on every bind and removed again on unbind.
+        /// </summary>
         private sealed class Decoration
         {
             public HierarchyViewItem Item;
             public HierarchyWindow Window;
             public GameObject Target;
+            /// <summary>Row container the elements are currently attached to; null while unbound.</summary>
+            public VisualElement Row;
             public VisualElement Tint;
             public VisualElement Stripe;
             public Button EditButton;
-            public bool Hovered;
+            /// <summary>Unity's own inline icon for the bound row, restored when our icon is removed.</summary>
+            public StyleBackground OriginalIcon;
+            public bool IconOverridden;
         }
 
         private static readonly Dictionary<HierarchyViewItem, Decoration> _decorations =
             new Dictionary<HierarchyViewItem, Decoration>();
+        /// <summary>Decoration currently attached to each row.</summary>
+        private static readonly Dictionary<VisualElement, Decoration> _rowDecorations =
+            new Dictionary<VisualElement, Decoration>();
+        private static readonly HashSet<VisualElement> _hoverTrackedRows = new HashSet<VisualElement>();
+        private static VisualElement _hoveredRow;
 
         public static void Bind(HierarchyWindow window, HierarchyView view, HierarchyViewItem item)
         {
             var decoration = GetOrCreate(item);
-            EnsureAttached(decoration);
             decoration.Window = window;
             decoration.Target = item.Handler is HierarchyGameObjectHandler handler
                 ? handler.GetGameObject(item.Node)
                 : null;
+            // Unity's node handler has just set the row's own icon inline (HierarchyGameObjectHandler.OnBindItem runs
+            // before this event), so anything we captured for a previous binding is stale.
+            decoration.IconOverridden = false;
+            AttachToRow(decoration, item.RowContainer ?? item);
             Apply(decoration);
         }
 
@@ -192,8 +201,8 @@ namespace CustomHierarchyTools
         {
             if (!_decorations.TryGetValue(item, out var decoration)) return;
             decoration.Target = null;
-            decoration.Hovered = false;
-            Apply(decoration);
+            Apply(decoration); // restores Unity's icon and hides tint, stripe and button
+            Detach(decoration);
         }
 
         public static void PopulateContextMenu(HierarchyWindow window, HierarchyView view, HierarchyViewItem item,
@@ -241,39 +250,66 @@ namespace CustomHierarchyTools
             stripe.left = 0f; stripe.top = 2f; stripe.bottom = 2f; stripe.width = 2f;
             stripe.display = DisplayStyle.None;
 
-            var row = item.RowContainer ?? item;
-            row.Insert(0, decoration.Tint);
-            row.Insert(1, decoration.Stripe);
-
+            // Pinned to the right edge of the whole row (like the legacy IMGUI version). The Name cell is only the
+            // first column, so a button inside it would sit at the column divider instead of the row's end.
             decoration.EditButton = new Button(() => OpenPicker(decoration))
             {
                 name = "hierarchy-styler-edit", tooltip = "Set hierarchy icon", text = ""
             };
             var button = decoration.EditButton.style;
-            button.width = ButtonSize; button.height = ButtonSize;
-            button.minWidth = ButtonSize; button.minHeight = ButtonSize;
-            button.marginLeft = 2f; button.marginRight = 2f; button.marginTop = 0f; button.marginBottom = 0f;
+            button.position = Position.Absolute;
+            button.top = 0f; button.bottom = 0f; button.right = ButtonMargin;
+            button.width = ButtonSize; button.minWidth = ButtonSize;
+            button.marginLeft = 0f; button.marginRight = 0f; button.marginTop = 0f; button.marginBottom = 0f;
             button.paddingLeft = 1f; button.paddingRight = 1f; button.paddingTop = 1f; button.paddingBottom = 1f;
             button.backgroundImage = new StyleBackground(HierarchyStyleRenderer.EditIcon());
             button.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
             button.display = DisplayStyle.None;
-            (item.RightCustomContainer ?? item).Add(decoration.EditButton);
-
-            item.RegisterCallback<PointerEnterEvent>(_ => { decoration.Hovered = true; UpdateButton(decoration); });
-            item.RegisterCallback<PointerLeaveEvent>(_ => { decoration.Hovered = false; UpdateButton(decoration); });
 
             _decorations[item] = decoration;
             return decoration;
         }
 
-        /// <summary>Rows are recycled and Unity may clear the custom containers; re-add our elements if needed.</summary>
-        private static void EnsureAttached(Decoration decoration)
+        /// <summary>Moves the decoration's elements into the given row and starts hover tracking on that row.</summary>
+        private static void AttachToRow(Decoration decoration, VisualElement row)
         {
-            var item = decoration.Item;
-            var row = item.RowContainer ?? item;
-            if (decoration.Tint.parent == null) row.Insert(0, decoration.Tint);
-            if (decoration.Stripe.parent == null) row.Insert(Mathf.Min(1, row.childCount), decoration.Stripe);
-            if (decoration.EditButton.parent == null) (item.RightCustomContainer ?? item).Add(decoration.EditButton);
+            if (decoration.Row == row) return;
+            Detach(decoration);
+            if (_rowDecorations.TryGetValue(row, out var previous) && previous != decoration) Detach(previous);
+
+            decoration.Row = row;
+            _rowDecorations[row] = decoration;
+            // Tint and stripe go below the cells, the button on top of them. CellRow keeps its cells in a separate
+            // child list, so extra children here do not disturb Unity's column binding.
+            row.Insert(0, decoration.Tint);
+            row.Insert(1, decoration.Stripe);
+            row.Add(decoration.EditButton);
+
+            // Rows are recycled by the list view, so one registration per row is enough.
+            if (_hoverTrackedRows.Add(row))
+            {
+                row.RegisterCallback<PointerEnterEvent>(_ => SetHoveredRow(row));
+                row.RegisterCallback<PointerLeaveEvent>(_ => { if (_hoveredRow == row) SetHoveredRow(null); });
+            }
+        }
+
+        private static void Detach(Decoration decoration)
+        {
+            if (decoration.Row == null) return;
+            if (_rowDecorations.TryGetValue(decoration.Row, out var current) && current == decoration)
+                _rowDecorations.Remove(decoration.Row);
+            decoration.Tint.RemoveFromHierarchy();
+            decoration.Stripe.RemoveFromHierarchy();
+            decoration.EditButton.RemoveFromHierarchy();
+            decoration.Row = null;
+        }
+
+        private static void SetHoveredRow(VisualElement row)
+        {
+            var previous = _hoveredRow;
+            _hoveredRow = row;
+            if (previous != null && _rowDecorations.TryGetValue(previous, out var old)) UpdateButton(old);
+            if (row != null && _rowDecorations.TryGetValue(row, out var current)) UpdateButton(current);
         }
 
         private static void Apply(Decoration decoration)
@@ -298,19 +334,28 @@ namespace CustomHierarchyTools
                 decoration.Stripe.style.display = DisplayStyle.None;
             }
 
+            // Unity 6.6 assigns the row's default icon (light, camera, component, gizmo...) as an inline
+            // background-image on item.Icon. Only replace it when this style carries an icon, and put Unity's icon
+            // back when the style is removed. Rows without a style must never be touched.
             var icon = style?.GetTexture() as Texture2D;
             if (icon != null && item.Icon != null)
             {
+                if (!decoration.IconOverridden)
+                {
+                    decoration.OriginalIcon = item.Icon.style.backgroundImage;
+                    decoration.IconOverridden = true;
+                }
                 item.Icon.style.backgroundImage = new StyleBackground(icon);
                 item.Icon.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
                 item.Icon.style.unityBackgroundImageTintColor = decoration.Target.activeInHierarchy
                     ? Color.white : new Color(1f, 1f, 1f, 0.45f);
             }
-            else if (item.Icon != null)
+            else if (decoration.IconOverridden && item.Icon != null)
             {
-                item.Icon.style.backgroundImage = StyleKeyword.Null;
+                item.Icon.style.backgroundImage = decoration.OriginalIcon;
                 item.Icon.style.backgroundSize = StyleKeyword.Null;
                 item.Icon.style.unityBackgroundImageTintColor = StyleKeyword.Null;
+                decoration.IconOverridden = false;
             }
 
             UpdateButton(decoration);
@@ -318,7 +363,15 @@ namespace CustomHierarchyTools
 
         private static void UpdateButton(Decoration decoration)
         {
-            bool show = decoration.Hovered && HierarchyStyleRenderer.IsEligible(decoration.Target);
+            bool show = decoration.Row != null && decoration.Row == _hoveredRow
+                && HierarchyStyleRenderer.IsEligible(decoration.Target);
+            if (show)
+            {
+                // Keep clear of Unity's prefab arrow when the row shows one.
+                var arrow = decoration.Item.NavigateIntoButton;
+                bool hasArrow = arrow != null && arrow.resolvedStyle.display != DisplayStyle.None;
+                decoration.EditButton.style.right = ButtonMargin + (hasArrow ? PrefabArrowWidth : 0f);
+            }
             decoration.EditButton.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
