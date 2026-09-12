@@ -15,7 +15,7 @@ Unity 6.6 añadió esto de forma nativa. Ve a Edit > Preferences > General > Hie
 - Botón de lápiz en cada fila de la Hierarchy (solo se ve al pasar el ratón). Funciona con un objeto o con la selección actual.
 - Popup con buscador y todos los iconos agrupados por carpeta, mostrando la imagen real para que veas lo que eliges.
 - Color de fila opcional a partir de unos cuantos colores predefinidos.
-- 156 iconos incluidos, repartidos en 14 carpetas: Organization, Environment, Lighting, Camera, Characters, Gameplay, Systems, Audio, Physics, VFX, UI, Animation, Debug y Horror. Cada carpeta usa su propio color para distinguirlas rápido.
+- 218 iconos incluidos, repartidos en 21 carpetas: Organization, Environment, Lighting, Camera, Characters, Gameplay, Systems, Audio, Physics, VFX, UI, Animation, Debug, Horror, Weapons, Ammo, Loot, Vehicles, RPG, Multiplayer y SciFi. Cada carpeta usa su propio color para distinguirlas rápido.
 - Deshacer y rehacer funcionan.
 - Los objetos se identifican por su id guardado, así que renombrarlos o cambiarlos de padre no pierde el estilo.
 - Puedes añadir tus propios PNG a la carpeta de iconos y aparecen en el popup.
