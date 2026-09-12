@@ -17,7 +17,7 @@ New in this branch: right-click a row and pick "Hierarchy Style..." to open the 
 - Pencil button on each hierarchy row (only visible while hovering). Works on one object or on the current selection.
 - Popup with a search box and all the icons grouped by folder, with the actual images so you can see what you're picking.
 - Optional row color from a small set of presets.
-- 156 icons included, split in 14 folders: Organization, Environment, Lighting, Camera, Characters, Gameplay, Systems, Audio, Physics, VFX, UI, Animation, Debug and Horror. Each folder uses its own color so you can tell them apart quickly.
+- 218 icons included, split in 21 folders: Organization, Environment, Lighting, Camera, Characters, Gameplay, Systems, Audio, Physics, VFX, UI, Animation, Debug, Horror, Weapons, Ammo, Loot, Vehicles, RPG, Multiplayer and SciFi. Each folder uses its own color so you can tell them apart quickly.
 - Undo/redo works.
 - Objects are identified by their saved id, so renaming or reparenting them keeps the style.
 - You can add your own PNGs to the icons folder and they show up in the popup.
